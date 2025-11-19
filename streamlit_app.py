@@ -1,8 +1,17 @@
 import streamlit as st
 import pandas as pd
-import joblib
 import os
 import numpy as np
+
+# joblib import fallback: try top-level joblib, then sklearn's bundled joblib, then raise
+try:
+    import joblib
+except Exception:
+    try:
+        # older scikit-learn versions exposed joblib under sklearn.externals
+        from sklearn.externals import joblib  # type: ignore
+    except Exception:
+        joblib = None
 
 st.set_page_config(page_title="Appendicitis Diagnosis Predictor", layout="centered")
 
@@ -22,10 +31,47 @@ scaler = None
 feature_names = None
 loaded_from = None
 
+# Helper: robust load using joblib/pandas/pickle fallbacks
+def robust_load_model_file(path):
+    """Try several strategies to load a model/pickle file.
+    Returns loaded object or raises the last exception.
+    """
+    # If it's the modeling results (likely saved via pandas.to_pickle), prefer pandas.read_pickle
+    if os.path.basename(path) == RESULTS_PATH:
+        try:
+            return pd.read_pickle(path)
+        except Exception as e_pd:
+            last_exc = e_pd
+            # fall back to joblib if available
+            if joblib is not None:
+                try:
+                    return joblib.load(path)
+                except Exception as e_j:
+                    last_exc = e_j
+            # final fallback to pickle
+            import pickle
+
+            with open(path, 'rb') as f:
+                try:
+                    return pickle.load(f)
+                except Exception as e_pickle:
+                    raise last_exc
+    else:
+        # For model/scaler files prefer joblib, then pickle
+        if joblib is not None:
+            try:
+                return joblib.load(path)
+            except Exception as e_j:
+                last_exc = e_j
+        import pickle
+        with open(path, 'rb') as f:
+            return pickle.load(f)
+
+
 # 1) Try to load a standalone model file
 if os.path.exists(MODEL_PATH):
     try:
-        model = joblib.load(MODEL_PATH)
+        model = robust_load_model_file(MODEL_PATH)
         loaded_from = MODEL_PATH
         diag.write(f"Loaded model from {MODEL_PATH}")
     except Exception as e:
@@ -35,7 +81,7 @@ if os.path.exists(MODEL_PATH):
 if model is None:
     if os.path.exists(RESULTS_PATH):
         try:
-            results = joblib.load(RESULTS_PATH)
+            results = robust_load_model_file(RESULTS_PATH)
             diag.write(f"Loaded {RESULTS_PATH}; top-level keys: {list(results.keys())}")
 
             # Prefer 'diagnosis' target, else first
@@ -80,7 +126,7 @@ if model is None:
 # 3) Load scaler if present
 if os.path.exists(SCALER_PATH):
     try:
-        scaler = joblib.load(SCALER_PATH)
+        scaler = robust_load_model_file(SCALER_PATH)
         diag.write(f"Loaded scaler from {SCALER_PATH}")
     except Exception as e:
         diag.write(f"Failed to load scaler: {e}")
