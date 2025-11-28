@@ -22,6 +22,7 @@ st.write("Enter patient features to predict appendicitis diagnosis. This app wil
 MODEL_PATH = "random_forest_model.pkl"
 RESULTS_PATH = "modeling_results.pkl"
 SCALER_PATH = "scaler.pkl"
+SCALER_PICKLE_PATH = "scaler_pickle.pkl"
 
 # Containers for diagnostics
 diag = st.expander("Diagnostics / loaded objects", expanded=True)
@@ -123,15 +124,21 @@ if model is None:
     else:
         diag.write(f"Neither {MODEL_PATH} nor {RESULTS_PATH} found in working directory.")
 
-# 3) Load scaler if present
-if os.path.exists(SCALER_PATH):
+# 3) Load scaler if present - prefer pickle-compatible copy if available
+if os.path.exists(SCALER_PICKLE_PATH):
+    try:
+        scaler = robust_load_model_file(SCALER_PICKLE_PATH)
+        diag.write(f"Loaded scaler from {SCALER_PICKLE_PATH}")
+    except Exception as e:
+        diag.write(f"Failed to load {SCALER_PICKLE_PATH}: {e}")
+elif os.path.exists(SCALER_PATH):
     try:
         scaler = robust_load_model_file(SCALER_PATH)
         diag.write(f"Loaded scaler from {SCALER_PATH}")
     except Exception as e:
-        diag.write(f"Failed to load scaler: {e}")
+        diag.write(f"Failed to load {SCALER_PATH}: {e}")
 else:
-    diag.write(f"{SCALER_PATH} not found; raw inputs will be passed to the model")
+    diag.write(f"No scaler found (looked for {SCALER_PICKLE_PATH} and {SCALER_PATH}); raw inputs will be passed to the model")
 
 # 4) If model has feature_names_in_, prefer that
 if model is not None and feature_names is None:
